@@ -1,0 +1,50 @@
+{
+  "name": "macos-theme-sync",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Pi package that syncs Pi's theme with macOS light/dark appearance without polling",
+  "license": "MIT",
+  "homepage": "https://github.com/adstastic/macos-theme-sync#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adstastic/macos-theme-sync.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adstastic/macos-theme-sync/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "theme",
+    "macos",
+    "dark-mode",
+    "light-mode"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "npm run build",
+    "prepublishOnly": "npm run check"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.75.4",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  }
+}
