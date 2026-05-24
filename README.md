@@ -2,7 +2,7 @@
 
 Pi extension that syncs Pi's theme with macOS light/dark appearance.
 
-No polling. It starts a tiny Swift watcher that subscribes to macOS `AppleInterfaceThemeChangedNotification`, emits `dark` or `light`, then Pi calls `ctx.ui.setTheme()`.
+No polling. It watches macOS appearance notifications plus `~/Library/Preferences/.GlobalPreferences.plist` changes via filesystem events, emits `dark` or `light`, then Pi calls `ctx.ui.setTheme()`.
 
 ## Install
 
@@ -40,6 +40,8 @@ Commands:
 
 ```text
 /macos-theme-sync status
+/macos-theme-sync sync
+/macos-theme-sync debug
 /macos-theme-sync start
 /macos-theme-sync stop
 /macos-theme-sync restart
@@ -67,6 +69,10 @@ pi -e ./src/index.ts
 ## Behavior
 
 - On startup, watcher emits current macOS appearance once.
-- On macOS appearance change, watcher emits next mode.
+- On macOS appearance notification, watcher emits next mode.
+- On wake/unlock/screensaver stop, watcher re-emits current mode to catch scheduled changes that happened during sleep.
+- On `.GlobalPreferences.plist` filesystem change, extension re-reads current mode to catch flips when notifications do not reach Pi.
+- `sync` immediately re-reads macOS appearance and applies matching Pi theme.
+- `debug` reports macOS mode, Pi theme, Swift watcher PID, filesystem watcher count, and configured theme names.
 - Extension keeps a footer status like `macOS:dark sync:on`.
 - In non-macOS environments, extension no-ops with a warning.

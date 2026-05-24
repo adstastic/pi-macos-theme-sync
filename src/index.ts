@@ -1,4 +1,8 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { watch, type FSWatcher } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const COMMAND_NAME = "macos-theme-sync";
@@ -7,6 +11,7 @@ const DEFAULT_DARK_THEME = "dark";
 const DEFAULT_LIGHT_THEME = "light";
 
 const WATCHER_SOURCE = String.raw`
+import AppKit
 import Foundation
 import Darwin
 
@@ -21,19 +26,40 @@ func emit() {
   Darwin.fflush(Darwin.stdout)
 }
 
-emit()
+var observerTokens: [NSObjectProtocol] = []
 
-let center = DistributedNotificationCenter.default()
-let name = Notification.Name("AppleInterfaceThemeChangedNotification")
-let token = center.addObserver(forName: name, object: nil, queue: .main) { _ in
-  emit()
+func observe(_ center: NotificationCenter, _ name: Notification.Name) {
+  let token = center.addObserver(forName: name, object: nil, queue: .main) { _ in
+    emit()
+  }
+  observerTokens.append(token)
 }
 
+func observeDistributed(_ name: String) {
+  let token = DistributedNotificationCenter.default().addObserver(
+    forName: Notification.Name(name),
+    object: nil,
+    queue: .main
+  ) { _ in
+    emit()
+  }
+  observerTokens.append(token)
+}
+
+emit()
+
+observeDistributed("AppleInterfaceThemeChangedNotification")
+observeDistributed("com.apple.screenIsUnlocked")
+observeDistributed("com.apple.screensaver.didstop")
+observe(NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification)
+
 RunLoop.main.run()
-_ = token
+_ = observerTokens
 `;
 
 type Mode = "dark" | "light";
+
+const execFileAsync = promisify(execFile);
 
 function themeForMode(mode: Mode): string {
 	const envName = mode === "dark" ? "PI_MACOS_THEME_SYNC_DARK" : "PI_MACOS_THEME_SYNC_LIGHT";
@@ -51,16 +77,36 @@ function formatStatus(mode: Mode | undefined, running: boolean): string {
 	return `macOS:${modeLabel} sync:${state}`;
 }
 
+async function readMacOSMode(): Promise<Mode> {
+	try {
+		const { stdout } = await execFileAsync("defaults", ["read", "-g", "AppleInterfaceStyle"]);
+		return stdout.toString().trim() === "Dark" ? "dark" : "light";
+	} catch {
+		return "light";
+	}
+}
+
+function isGlobalPreferencesFile(filename: string | Buffer | null): boolean {
+	if (!filename) return true;
+	return filename.toString().startsWith(".GlobalPreferences") && filename.toString().endsWith(".plist");
+}
+
 export default function (pi: ExtensionAPI) {
 	let watcher: ChildProcess | undefined;
-	let stopping = false;
+	let fileWatchers: FSWatcher[] = [];
+	const intentionallyStopped = new WeakSet<ChildProcess>();
 	let lastMode: Mode | undefined;
 	let stdoutBuffer = "";
 	let stderrBuffer = "";
+	let syncTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function isRunning(): boolean {
+		return Boolean(watcher) || fileWatchers.length > 0;
+	}
 
 	function setStatus(ctx: ExtensionContext): void {
 		if (!ctx.hasUI) return;
-		ctx.ui.setStatus(STATUS_KEY, formatStatus(lastMode, Boolean(watcher)));
+		ctx.ui.setStatus(STATUS_KEY, formatStatus(lastMode, isRunning()));
 	}
 
 	function applyMode(mode: Mode, ctx: ExtensionContext): void {
@@ -96,6 +142,47 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	function schedulePreferenceSync(ctx: ExtensionContext): void {
+		if (syncTimer) clearTimeout(syncTimer);
+		syncTimer = setTimeout(() => {
+			syncTimer = undefined;
+			void readMacOSMode().then((mode) => applyMode(mode, ctx));
+		}, 100);
+	}
+
+	function startPreferenceWatchers(ctx: ExtensionContext): void {
+		if (fileWatchers.length > 0) return;
+
+		const watchTargets = [join(homedir(), "Library", "Preferences"), join(homedir(), "Library", "Preferences", "ByHost")];
+		for (const target of watchTargets) {
+			try {
+				const fsWatcher = watch(target, (eventType, filename) => {
+					if ((eventType === "change" || eventType === "rename") && isGlobalPreferencesFile(filename)) {
+						schedulePreferenceSync(ctx);
+					}
+				});
+				fsWatcher.on("error", (error) => {
+					if (ctx.hasUI) ctx.ui.notify(`macOS theme sync preferences watcher failed: ${error.message}`, "warning");
+				});
+				fileWatchers.push(fsWatcher);
+			} catch (error) {
+				if (ctx.hasUI) {
+					const message = error instanceof Error ? error.message : String(error);
+					ctx.ui.notify(`macOS theme sync could not watch ${target}: ${message}`, "warning");
+				}
+			}
+		}
+	}
+
+	function stopPreferenceWatchers(): void {
+		if (syncTimer) {
+			clearTimeout(syncTimer);
+			syncTimer = undefined;
+		}
+		for (const fsWatcher of fileWatchers) fsWatcher.close();
+		fileWatchers = [];
+	}
+
 	function start(ctx: ExtensionContext, announce = false): void {
 		if (!ctx.hasUI) return;
 
@@ -105,12 +192,15 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		if (watcher) {
+			startPreferenceWatchers(ctx);
 			if (announce) ctx.ui.notify("macOS theme sync already running", "info");
 			setStatus(ctx);
 			return;
 		}
 
-		stopping = false;
+		startPreferenceWatchers(ctx);
+		void readMacOSMode().then((mode) => applyMode(mode, ctx));
+
 		stdoutBuffer = "";
 		stderrBuffer = "";
 
@@ -129,8 +219,10 @@ export default function (pi: ExtensionAPI) {
 			setStatus(ctx);
 		});
 		child.on("exit", (code, signal) => {
+			const expectedStop = intentionallyStopped.has(child);
+			intentionallyStopped.delete(child);
 			if (watcher === child) watcher = undefined;
-			if (!stopping && ctx.hasUI) {
+			if (!expectedStop && ctx.hasUI) {
 				const reason = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`;
 				ctx.ui.notify(`macOS theme sync stopped: ${reason}`, "warning");
 			}
@@ -142,6 +234,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function stop(ctx?: ExtensionContext, announce = false): void {
+		stopPreferenceWatchers();
 		const child = watcher;
 		watcher = undefined;
 		if (!child) {
@@ -150,7 +243,7 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		stopping = true;
+		intentionallyStopped.add(child);
 		child.kill();
 		if (ctx?.hasUI) {
 			ctx.ui.setStatus(STATUS_KEY, undefined);
@@ -167,13 +260,35 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand(COMMAND_NAME, {
-		description: "Sync pi theme with macOS light/dark appearance. Use /macos-theme-sync status|start|stop|restart.",
+		description: "Sync pi theme with macOS light/dark appearance. Use /macos-theme-sync status|sync|debug|start|stop|restart.",
 		handler: async (args, ctx) => {
 			const action = args.trim().toLowerCase() || "status";
 
 			if (action === "status") {
 				ctx.ui.notify(
-					`${formatStatus(lastMode, Boolean(watcher))}; light=${themeForMode("light")}; dark=${themeForMode("dark")}`,
+					`${formatStatus(lastMode, isRunning())}; light=${themeForMode("light")}; dark=${themeForMode("dark")}`,
+					"info",
+				);
+				return;
+			}
+
+			if (action === "sync") {
+				applyMode(await readMacOSMode(), ctx);
+				return;
+			}
+
+			if (action === "debug") {
+				const macOSMode = await readMacOSMode();
+				ctx.ui.notify(
+					[
+						formatStatus(lastMode, isRunning()),
+						`macOS=${macOSMode}`,
+						`pi=${ctx.ui.theme.name}`,
+						`swiftPid=${watcher?.pid ?? "none"}`,
+						`fsWatchers=${fileWatchers.length}`,
+						`light=${themeForMode("light")}`,
+						`dark=${themeForMode("dark")}`,
+					].join("; "),
 					"info",
 				);
 				return;
@@ -195,7 +310,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			ctx.ui.notify(`usage: /${COMMAND_NAME} [status|start|stop|restart]`, "warning");
+			ctx.ui.notify(`usage: /${COMMAND_NAME} [status|sync|debug|start|stop|restart]`, "warning");
 		},
 	});
 }
