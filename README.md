@@ -1,4 +1,4 @@
-# macos-theme-sync
+# pi-macos-theme-sync
 
 Pi extension that syncs Pi's theme with macOS light/dark appearance.
 
@@ -9,13 +9,13 @@ No polling. It watches macOS appearance notifications plus `~/Library/Preference
 From npm:
 
 ```bash
-pi install npm:macos-theme-sync
+pi install npm:pi-macos-theme-sync
 ```
 
 Try without installing:
 
 ```bash
-pi -e npm:macos-theme-sync
+pi -e npm:pi-macos-theme-sync
 ```
 
 From this repository:
@@ -29,7 +29,7 @@ pi -e ./src/index.ts
 Or install/use it as a Pi package from a local path:
 
 ```bash
-pi install /absolute/path/to/macos-theme-sync
+pi install /absolute/path/to/pi-macos-theme-sync
 ```
 
 ## Use
@@ -39,12 +39,12 @@ Sync starts automatically on Pi session start.
 Commands:
 
 ```text
-/macos-theme-sync status
-/macos-theme-sync sync
-/macos-theme-sync debug
-/macos-theme-sync start
-/macos-theme-sync stop
-/macos-theme-sync restart
+/pi-macos-theme-sync status
+/pi-macos-theme-sync sync
+/pi-macos-theme-sync debug
+/pi-macos-theme-sync start
+/pi-macos-theme-sync stop
+/pi-macos-theme-sync restart
 ```
 
 Default mapping:

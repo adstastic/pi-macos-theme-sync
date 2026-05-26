@@ -1,16 +1,16 @@
 {
-  "name": "macos-theme-sync",
+  "name": "pi-macos-theme-sync",
   "version": "0.1.0",
   "type": "module",
   "description": "Pi package that syncs Pi's theme with macOS light/dark appearance without polling",
   "license": "MIT",
-  "homepage": "https://github.com/adstastic/macos-theme-sync#readme",
+  "homepage": "https://github.com/adstastic/pi-macos-theme-sync#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/adstastic/macos-theme-sync.git"
+    "url": "git+https://github.com/adstastic/pi-macos-theme-sync.git"
   },
   "bugs": {
-    "url": "https://github.com/adstastic/macos-theme-sync/issues"
+    "url": "https://github.com/adstastic/pi-macos-theme-sync/issues"
   },
   "keywords": [
     "pi-package",

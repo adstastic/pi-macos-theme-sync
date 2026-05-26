@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-const COMMAND_NAME = "macos-theme-sync";
-const STATUS_KEY = "macos-theme-sync";
+const COMMAND_NAME = "pi-macos-theme-sync";
+const STATUS_KEY = "pi-macos-theme-sync";
 const DEFAULT_DARK_THEME = "dark";
 const DEFAULT_LIGHT_THEME = "light";
 
@@ -260,7 +260,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand(COMMAND_NAME, {
-		description: "Sync pi theme with macOS light/dark appearance. Use /macos-theme-sync status|sync|debug|start|stop|restart.",
+		description: "Sync pi theme with macOS light/dark appearance. Use /pi-macos-theme-sync status|sync|debug|start|stop|restart.",
 		handler: async (args, ctx) => {
 			const action = args.trim().toLowerCase() || "status";
 
