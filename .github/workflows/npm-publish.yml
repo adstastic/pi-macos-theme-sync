@@ -73,5 +73,8 @@ jobs:
       - name: Update npm
         run: npm install -g npm@latest
 
+      - name: Install dependencies
+        run: npm ci
+
       - name: Publish to npm
         run: npm publish --access public --provenance
